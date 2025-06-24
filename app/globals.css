@@ -1,4 +1,93 @@
-
+/* Tailwind Base Styles */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Custom PDF Styles */
+.pdf-theme {
+  font-family: 'Georgia', 'Times New Roman', serif;
+  color: #222;
+  background: #ffffff;
+  padding: 2rem;
+  max-width: 700px;
+  margin: 0 auto;
+  line-height: 1.7;
+  font-size: 16px;
+}
+
+.pdf-theme h1, .pdf-theme h2, .pdf-theme h3 {
+  color: #1f2937;
+  font-family: 'Helvetica Neue', sans-serif;
+  margin-top: 1.8rem;
+  margin-bottom: 1rem;
+}
+
+.pdf-theme h1 {
+  font-size: 2.2rem;
+  font-weight: bold;
+  border-bottom: 2px solid #e5e7eb;
+  padding-bottom: 0.5rem;
+}
+
+.pdf-theme h2 {
+  font-size: 1.75rem;
+  font-weight: bold;
+}
+
+.pdf-theme h3 {
+  font-size: 1.5rem;
+  font-weight: 600;
+}
+
+.pdf-theme p {
+  margin-bottom: 1rem;
+}
+
+.pdf-theme ul {
+  list-style-type: disc;
+  padding-left: 1.5rem;
+  margin-bottom: 1rem;
+}
+
+.pdf-theme ol {
+  list-style-type: decimal;
+  padding-left: 1.5rem;
+  margin-bottom: 1rem;
+}
+
+.pdf-theme blockquote {
+  font-style: italic;
+  border-left: 4px solid #a5b4fc;
+  padding-left: 1rem;
+  margin: 1rem 0;
+  color: #4b5563;
+}
+
+.pdf-theme code {
+  background-color: #f3f4f6;
+  padding: 0.2rem 0.4rem;
+  font-size: 0.875rem;
+  border-radius: 4px;
+  font-family: 'Courier New', monospace;
+}
+
+.pdf-theme pre {
+  background-color: #f9fafb;
+  padding: 1rem;
+  border-radius: 6px;
+  overflow-x: auto;
+  margin-bottom: 1rem;
+}
+
+.pdf-theme img {
+  max-width: 100%;
+  height: auto;
+  margin: 1rem 0;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+}
+
+.pdf-theme a {
+  color: #2563eb;
+  text-decoration: underline;
+}
