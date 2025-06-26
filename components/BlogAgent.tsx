@@ -2,8 +2,6 @@
 
 import { useState, useEffect, useRef } from "react";
 import ReactMarkdown from "react-markdown";
-// remark-gfm and react-icons cannot be imported directly in this environment.
-// They are replaced with alternatives (basic markdown and inline SVGs).
 
 // Interface for history items
 interface HistoryItem {
@@ -25,8 +23,7 @@ function getRelativeTime(timestamp?: string) {
   const diff = Math.floor((now.getTime() - past.getTime()) / 1000);
 
   if (diff < 60) return `${diff}s ago`;
-  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  if (diff < 3600) return `${Math.floor(diff / 3600)}h ago`;
   return `${Math.floor(diff / 86400)}d ago`;
 }
 
@@ -67,8 +64,8 @@ export default function BlogAgent() {
   const [darkMode, setDarkMode] = useState(false);
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [loadingStep, setLoadingStep] = useState("");
-  const [streamingBlog, setStreamingBlog] = useState("");
-  const [imageUrls, setImageUrls] = useState<string[]>([]);
+  const [streamingBlog, setStreamingBlog] = useState(""); // Will contain full Markdown including images
+  // imageUrls state is no longer needed as images are embedded in Markdown
   const [suggestion, setSuggestion] = useState("");
   const [currentUrl, setCurrentUrl] = useState(""); // Safely store window.location.href
   const [toast, setToast] = useState<Toast | null>(null); // For toast notifications
@@ -76,10 +73,102 @@ export default function BlogAgent() {
   const controllerRef = useRef<AbortController | null>(null);
   const editableRef = useRef<HTMLDivElement>(null);
 
+  // --- PDF CSS (Inline for html2pdf.js consistency) ---
+  const pdfCss = `
+    .pdf-theme {
+      font-family: 'Georgia', 'Times New Roman', serif;
+      color: #222;
+      background: #ffffff;
+      padding: 2rem;
+      max-width: 700px;
+      margin: 0 auto;
+      line-height: 1.7;
+      font-size: 16px;
+    }
+
+    .pdf-theme h1, .pdf-theme h2, .pdf-theme h3 {
+      color: #1f2937;
+      font-family: 'Helvetica Neue', sans-serif;
+      margin-top: 1.8rem;
+      margin-bottom: 1rem;
+    }
+
+    .pdf-theme h1 {
+      font-size: 2.2rem;
+      font-weight: bold;
+      border-bottom: 2px solid #e5e7eb;
+      padding-bottom: 0.5rem;
+    }
+
+    .pdf-theme h2 {
+      font-size: 1.75rem;
+      font-weight: bold;
+    }
+
+    .pdf-theme h3 {
+      font-size: 1.5rem;
+      font-weight: 600;
+    }
+
+    .pdf-theme p {
+      margin-bottom: 1rem;
+    }
+
+    .pdf-theme ul {
+      list-style-type: disc;
+      padding-left: 1.5rem;
+      margin-bottom: 1rem;
+    }
+
+    .pdf-theme ol {
+      list-style-type: decimal;
+      padding-left: 1.5rem;
+      margin-bottom: 1rem;
+    }
+
+    .pdf-theme blockquote {
+      font-style: italic;
+      border-left: 4px solid #a5b4fc;
+      padding-left: 1rem;
+      margin: 1rem 0;
+      color: #4b5563;
+    }
+
+    .pdf-theme code {
+      background-color: #f3f4f6;
+      padding: 0.2rem 0.4rem;
+      font-size: 0.875rem;
+      border-radius: 4px;
+      font-family: 'Courier New', monospace;
+    }
+
+    .pdf-theme pre {
+      background-color: #f9fafb;
+      padding: 1rem;
+      border-radius: 6px;
+      overflow-x: auto;
+      margin-bottom: 1rem;
+    }
+
+    /* Important: Style for images within Markdown for PDF */
+    .pdf-theme img {
+      max-width: 100%;
+      height: auto;
+      margin: 1rem 0;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+      display: block; /* Ensure images take full width if they are not inline */
+    }
+
+    .pdf-theme a {
+      color: #2563eb;
+      text-decoration: underline;
+    }
+  `;
+
   // --- EFFECTS ---
 
   useEffect(() => {
-    // Create and load html2pdf.js script dynamically
     const script = document.createElement("script");
     script.src =
       "https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js";
@@ -96,7 +185,6 @@ export default function BlogAgent() {
 
     document.body.appendChild(script);
 
-    // Load blog history
     try {
       const saved = localStorage.getItem("blog-history");
       if (saved) setHistory(JSON.parse(saved));
@@ -104,13 +192,14 @@ export default function BlogAgent() {
       console.error("Failed to parse history from localStorage", e);
     }
 
-    // Set current URL safely
     if (typeof window !== "undefined") {
       setCurrentUrl(window.location.href);
     }
 
     return () => {
-      document.body.removeChild(script);
+      if (document.body.contains(script)) {
+        document.body.removeChild(script);
+      }
     };
   }, []);
 
@@ -120,8 +209,17 @@ export default function BlogAgent() {
     setToast({ message, type });
   };
 
-  // Function to generate a new suggestion based on blog content
   const generateNewSuggestion = async (blogContent: string) => {
+    // IMPORTANT: Make sure this API key is set for client-side calls,
+    // or proxy this request through your backend for security.
+    const GEMINI_API_KEY = process.env.NEXT_PUBLIC_GEMINI_API_KEY || ""; 
+
+    if (!GEMINI_API_KEY) {
+        console.warn("Gemini API key is missing. Cannot generate suggestions.");
+        setSuggestion('Consider adding more specific examples.');
+        return;
+    }
+
     const suggestionPrompt = `Based on the following blog post, provide one concise, actionable suggestion for improvement that could be appended to the original prompt to generate an even better version. The suggestion should be a single sentence. Blog Post: "${blogContent.substring(
       0,
       500
@@ -130,8 +228,8 @@ export default function BlogAgent() {
     const payload = {
       contents: [{ role: "user", parts: [{ text: suggestionPrompt }] }],
     };
-    const apiKey = ""; // Will be populated by the environment
-    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+    
+    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`;
 
     try {
       const response = await fetch(apiUrl, {
@@ -143,37 +241,39 @@ export default function BlogAgent() {
       if (result.candidates && result.candidates[0]?.content?.parts[0]?.text) {
         setSuggestion(result.candidates[0].content.parts[0].text.trim());
       } else {
-        // Fallback suggestion
         setSuggestion('Consider adding a "Key Takeaways" section.');
       }
     } catch (error) {
       console.error("Suggestion generation failed:", error);
-      // Fallback suggestion
       setSuggestion('Consider adding a "Key Takeaways" section.');
     }
   };
 
   const generateBlog = async () => {
     setLoading(true);
-    setStreamingBlog("");
-    setBlog("");
+    setStreamingBlog(""); // Clear streaming text
+    setBlog(""); // Clear final blog
     setShowButtons(false);
-    setImageUrls([]);
+    // imageUrls state is no longer used for inline images
     setLoadingStep("");
     setSuggestion("");
 
     const steps = [
       "🔍 Gathering related data and references...",
       "📝 Preparing and formatting...",
+      "🖼️ Finding and inserting relevant visuals...", // Reflects backend embedding
       "✨ Finalizing your unique blog...",
     ];
-    steps.forEach((step, i) => {
-      setTimeout(() => setLoadingStep(step), 3000 + i * 5000);
-    });
+    let stepIndex = 0;
+    const loadingInterval = setInterval(() => {
+      setLoadingStep(steps[stepIndex % steps.length]);
+      stepIndex++;
+    }, 5000);
 
     controllerRef.current = new AbortController();
 
     try {
+      // Frontend now expects the FULL Markdown (with images) from the backend
       const res = await fetch("http://localhost:8000/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -186,6 +286,7 @@ export default function BlogAgent() {
         setBlog(errorData.error || "Something went wrong. Please try again.");
         showToast(errorData.error || "Failed to generate blog.", "error");
         setLoading(false);
+        clearInterval(loadingInterval);
         return;
       }
 
@@ -193,45 +294,20 @@ export default function BlogAgent() {
 
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
-      let fullText = "";
+      let fullReceivedMarkdown = ""; // Accumulates all streamed markdown, including images
 
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
         const chunk = decoder.decode(value);
-        fullText += chunk;
-        setStreamingBlog((prev) => prev + chunk);
+        fullReceivedMarkdown += chunk;
+        setStreamingBlog(fullReceivedMarkdown); // Update streaming display directly
       }
 
-      const imageJsonStartTag = "<!--IMAGE_JSON_START-->";
-      const imageJsonEndTag = "<!--IMAGE_JSON_END-->";
-      const startImgJson = fullText.indexOf(imageJsonStartTag);
-      const endImgJson = fullText.indexOf(imageJsonEndTag);
-
-      if (startImgJson !== -1 && endImgJson !== -1) {
-        const jsonString = fullText.substring(
-          startImgJson + imageJsonStartTag.length,
-          endImgJson
-        );
-        try {
-          const parsedImageUrls = JSON.parse(jsonString);
-          if (Array.isArray(parsedImageUrls)) {
-            setImageUrls(parsedImageUrls);
-          }
-        } catch (err) {
-          console.error("Failed to parse image URLs from backend JSON:", err);
-          showToast("Failed to load some images.", "error");
-        }
-        fullText =
-          fullText.substring(0, startImgJson) +
-          fullText.substring(endImgJson + imageJsonEndTag.length);
-      }
-
-      setBlog(fullText);
+      setBlog(fullReceivedMarkdown); // Set final markdown
       setShowButtons(true);
 
-      // Generate a new, dynamic suggestion
-      await generateNewSuggestion(fullText);
+      await generateNewSuggestion(fullReceivedMarkdown); // Use full markdown for suggestion
 
       const newEntry = { prompt, timestamp: new Date().toISOString() };
       const updated = [
@@ -253,6 +329,7 @@ export default function BlogAgent() {
     } finally {
       setLoading(false);
       controllerRef.current = null;
+      clearInterval(loadingInterval);
       setLoadingStep("");
     }
   };
@@ -261,7 +338,6 @@ export default function BlogAgent() {
     setPrompt("");
     setBlog("");
     setStreamingBlog("");
-    setImageUrls([]);
     setShowButtons(false);
     setLoadingStep("");
     setSuggestion("");
@@ -279,7 +355,6 @@ export default function BlogAgent() {
       return;
     }
 
-    // Ensure html2pdf is available after script load
     const html2pdfInstance = (window as any).html2pdf;
 
     if (typeof html2pdfInstance !== "function") {
@@ -288,23 +363,32 @@ export default function BlogAgent() {
       return;
     }
 
-    // Clone blog content safely
-    const clone = element.cloneNode(true) as HTMLElement;
-    clone.classList.remove('prose-invert', 'dark'); // Remove dark mode
-    clone.classList.add('pdf-theme'); // Optional CSS class
+    // Create a temporary div to hold the content with inline styles for PDF
+    const printContent = document.createElement('div');
+    printContent.className = 'pdf-theme'; // Apply base class
+    // Inject custom PDF CSS directly into the element that html2pdf will process
+    printContent.innerHTML = `<style>${pdfCss}</style>${element.innerHTML}`;
 
-    const wrapper = document.createElement("div");
-    wrapper.appendChild(clone);
+    // Append to body temporarily for rendering, then remove
+    document.body.appendChild(printContent);
 
     html2pdfInstance()
       .set({
         margin: 0.5,
         filename: "blog.pdf",
-        html2canvas: { scale: 2 },
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: { 
+            scale: 2, 
+            logging: true, 
+            useCORS: true, // Crucial for images from Pexels (cross-origin)
+        },
         jsPDF: { unit: "in", format: "letter", orientation: "portrait" },
       })
-      .from(wrapper)
-      .save();
+      .from(printContent)
+      .save()
+      .finally(() => {
+        document.body.removeChild(printContent); // Clean up temporary element
+      });
   };
 
   const handleCopy = () => {
@@ -325,8 +409,6 @@ export default function BlogAgent() {
     }
   };
 
-  // --- RENDER ---
-
   return (
     <div className={`${darkMode ? "dark" : ""} font-inter`}>
       {toast && (
@@ -340,7 +422,7 @@ export default function BlogAgent() {
         {/* Header */}
         <header className="flex flex-col sm:flex-row justify-between items-center px-4 sm:px-6 py-3 sm:py-4 bg-gray-800 border-b border-gray-700 shadow-lg rounded-b-lg">
           <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-green-400 mb-2 sm:mb-0">
-            ✨ Blog Writer Agent
+            ✨ WriteGen AI
           </h1>
           <div className="flex gap-2">
             <button
@@ -475,7 +557,6 @@ export default function BlogAgent() {
           </div>
 
           {/* Prompt Input and Suggestion Section */}
-          {/* Prompt Input and Suggestion Section */}
           <div className="w-full h-full md:w-1/3 p-4 bg-gray-900 flex flex-col border-b md:border-b-0 md:border-r border-gray-800 min-h-[250px] md:min-h-0">
             <h2 className="text-2xl sm:text-3xl font-semibold mb-4 text-gray-200">
               💡 Enter a Prompt
@@ -577,35 +658,11 @@ export default function BlogAgent() {
                 loading ? "opacity-70 cursor-not-allowed" : "cursor-text"
               }`}
             >
-              {/* The 'remarkGfm' plugin has been removed to fix the compilation error */}
+              {/* ReactMarkdown will render the image tags from the Markdown received from the backend */}
               <ReactMarkdown>{loading ? streamingBlog : blog}</ReactMarkdown>
             </div>
 
-            {imageUrls.length > 0 && (
-              <div className="my-8 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-                {imageUrls.map((url, i) => (
-                  <div
-                    key={i}
-                    className="relative rounded-lg overflow-hidden shadow-xl group"
-                  >
-                    <img
-                      src={url}
-                      alt={`Blog visual ${i + 1}`}
-                      className="w-full h-48 sm:h-56 object-cover rounded-lg transform transition-transform duration-300 group-hover:scale-105"
-                      onError={(e) => {
-                        e.currentTarget.src = `https://placehold.co/400x300/343434/FFFFFF?text=Image+Load+Error`;
-                        e.currentTarget.alt = "Image failed to load";
-                      }}
-                    />
-                    <div className="absolute inset-0 bg-black bg-opacity-40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-                      <p className="text-white text-md font-semibold">
-                        Related Image
-                      </p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
+            {/* The separate imageUrls rendering block is removed as images are now inline */}
 
             {showButtons && (
               <div className="mt-6 flex flex-wrap gap-3 items-center justify-between">
